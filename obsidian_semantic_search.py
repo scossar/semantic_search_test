@@ -3,6 +3,8 @@ from sentence_transformers import SentenceTransformer
 import numpy as np
 import frontmatter
 from typing import Dict, List, Set
+import typer
+from rich import print
 
 
 class SemanticSearch:
@@ -37,8 +39,7 @@ class SemanticSearch:
             post = frontmatter.load(filepath)
             file_id = post.get("file_id")
             if file_id:
-                # Using this approach for now, may change later
-                title = filepath.stem.replace(" ", "_")
+                title = filepath.stem.replace("_", " ")
                 self.metadata[file_id] = {
                     "title": title,
                     "content": post.content
@@ -48,7 +49,7 @@ class SemanticSearch:
         for file_id, data in self.metadata.items():
             # TODO: prepend title to content, maybe remove underscores from titles
             # instead of adding underscores
-            embedding = self.model.encode(data["content"])
+            embedding = self.model.encode(f"{data['title']}\n{data['content']}")
             self.embeddings[file_id] = embedding
 
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
@@ -89,30 +90,41 @@ class SemanticSearch:
         return results
 
 
-def main():
-    semantic_search = SemanticSearch(notes_dir="/home/scossar/obsidian/")
+app = typer.Typer()
+
+
+@app.command()
+def main(notes_dir: str, query: str):
+    """
+    Search notes_dir for query
+    """
+    path = Path(notes_dir)
+
+    if not path.exists():
+        typer.echo(f"Error: Directory '{notes_dir}' does not exist")
+        raise typer.Exit(1)
+
+    if not path.is_dir():
+        typer.echo(f"Error: '{notes_dir}' is not a directory")
+        raise typer.Exit(1)
+
+    semantic_search = SemanticSearch(notes_dir=notes_dir)
     semantic_search.load_documents()
     semantic_search.generate_embeddings()
-    results = semantic_search.search("rules of calculus")
+    results = semantic_search.search(query)
 
+    print("\n")
     for i in range(len(results)):
         result = results[i]
-        for key, value in result.items():
-            print(f"{key}:\n{value}")
-        print("\n")
+        similarity = result["similarity"]
+        metadata = result["metadata"]
+        title = metadata["title"]
+        content = metadata["content"]
 
-    # notes = semantic_search.find_files_by_ids(
-    #     [
-    #         "zig_13_for_ghostty_20250105_190604_1d7b",
-    #         "training_and_testing_on_different_distributions_20250106_162438_3cf7"
-    #     ]
-    # )
-    #
-    # for file_id, content in notes.items():
-    #     print(f"file_id: {file_id}\ncontent:\n{content}")
+        print(f"[bold green]{title}[/bold green]\nsimilarity: {similarity}\n{content}\n\n")
 
 
 if __name__ == "__main__":
-    main()
+    app()
 
 
