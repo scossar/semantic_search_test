@@ -46,6 +46,8 @@ class SemanticSearch:
 
     def generate_embeddings(self):
         for file_id, data in self.metadata.items():
+            # TODO: prepend title to content, maybe remove underscores from titles
+            # instead of adding underscores
             embedding = self.model.encode(data["content"])
             self.embeddings[file_id] = embedding
 
