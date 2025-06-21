@@ -6,9 +6,12 @@ from typing import Dict, List, Set
 import typer
 from rich import print
 
+# notes:
+# - generate_vector_embeddings_for_local_files.md
+
 
 class SemanticSearch:
-    def __init__(self, notes_dir: str, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, notes_dir: str, model_name: str = "all-mpnet-base-v2"):
         self.notes_dir = Path(notes_dir)
         self.skip_dirs: Set[str] = {
             "node_modules",
@@ -47,8 +50,6 @@ class SemanticSearch:
 
     def generate_embeddings(self):
         for file_id, data in self.metadata.items():
-            # TODO: prepend title to content, maybe remove underscores from titles
-            # instead of adding underscores
             embedding = self.model.encode(f"{data['title']}\n{data['content']}")
             self.embeddings[file_id] = embedding
 
