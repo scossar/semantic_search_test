@@ -6,7 +6,23 @@ import typer
 from rich import print
 import chromadb
 from chromadb.config import Settings
+import numpy as np
 
+from rich.console import Console
+from rich.panel import Panel
+# from rich.table import Table
+from rich.syntax import Syntax
+from rich.text import Text
+# from rich.columns import Columns
+from rich.box import ROUNDED, MINIMAL
+
+console = Console()
+###############################################################################
+# notes:
+# - generating_embeddings_from_markdown_posts.md
+# - semantic_search_and_vector_databases.md
+# - getting_started_with_chromadb.md
+# - handling_chunked_data_returned_from_chroma.md
 
 class SemanticSearch:
     def __init__(self, model_name: str = "all-mpnet-base-v2",
@@ -85,7 +101,6 @@ class SemanticSearch:
 
             for i, chunk in enumerate(chunks):
                 chunk_id = f"{file_id}_{i}"
-                # embedding_text = chunk["text"]  # previously I was prepending the title
 
                 ids.append(chunk_id)
                 documents.append(chunk["text"])
@@ -94,7 +109,8 @@ class SemanticSearch:
                     "title": title,
                     "start_line": chunk["start_line"],
                     "end_line": chunk["end_line"],
-                    "indexed_at": file_mtime
+                    "indexed_at": file_mtime,
+                    "file_path": str(filepath)
                 })
 
                 embedding = self.model.encode(
@@ -150,7 +166,7 @@ class SemanticSearch:
             return False
         return True
 
-    def search(self, query: str, top_k: int = 5):
+    def search(self, query: str, top_k: int = 5, chunks_per_file: int = 3):
         query_embedding = self.model.encode(
             query,
             convert_to_numpy=True,
@@ -159,11 +175,55 @@ class SemanticSearch:
 
         results = self.collection.query(
             query_embeddings=[query_embedding.tolist()],
-            n_results=top_k,
+            n_results=top_k * 3,  # not quite right
             include=["metadatas", "documents", "distances"]
         )
 
+        if not (results["metadatas"] and results["documents"] and results["distances"]):
+            return []
 
+        file_groups = {}
+        for i in range(len(results["ids"][0])):
+            file_id = results["metadatas"][0][i]["file_id"]
+            if file_id not in file_groups:
+                file_groups[file_id] = []
+
+            file_groups[file_id].append({
+                "similarity": 1 - results["distances"][0][i],
+                "metadata": {
+                    **results["metadatas"][0][i],
+                    "content": results["documents"][0][i]
+                }
+            })
+        # sort files by best chunk's similarity
+        sorted_files = sorted(
+            file_groups.items(),
+            key=lambda x: x[1][0]["similarity"],
+            reverse=True
+        )[:top_k]
+
+        formatted_results = []
+        for file_id, chunks in sorted_files:
+            formatted_results.append({
+                "file_id": file_id,
+                "file_path": chunks[0]["metadata"]["file_path"],
+                "title": chunks[0]["metadata"]["title"],
+                "best_similarity": chunks[0]["similarity"],
+                "chunks": chunks[:chunks_per_file]
+            })
+
+        return formatted_results
+
+    def search_center(self, top_k: int=15):
+        all_data = self.collection.get(include=["embeddings"])
+        embeddings = np.array(all_data["embeddings"])
+        centroid = embeddings.mean(axis=0)
+
+        results = self.collection.query(
+            query_embeddings=[centroid.tolist()],
+            n_results=top_k,
+            include=["metadatas", "documents", "distances"]
+        )
         if not (results["metadatas"] and results["documents"] and results["distances"]):
             return []
 
@@ -194,7 +254,6 @@ class SemanticSearch:
 
         return results
 
-
 app = typer.Typer()
 
 @app.command()
@@ -210,13 +269,85 @@ def index_file(file_path: Path):
     file_path = Path(file_path)
     semantic_search.index_file(filepath=file_path)
 
+# vibe coded: will adjust
 @app.command()
-def search(query: str):
+def search(query: str, top_k: int = 5, chunks_per_file: int = 3):
     """Search indexed documents"""
-    semantic_search = SemanticSearch()
-    results = semantic_search.search(query)
+    results = SemanticSearch().search(query, top_k, chunks_per_file)
+    
+    console.print(f"\n[bold cyan]Search results for:[/bold cyan] [yellow]{query}[/yellow]\n")
+    
+    for i, result in enumerate(results, 1):
+        # Create a header with file info
+        header = Text()
+        header.append(f"{i}. ", style="bold cyan")
+        header.append(result['title'], style="bold green")
+        
+        # Create a subtle info line
+        info_line = f"[dim]{result['file_path']} • {result['best_similarity']:.3f} similarity[/dim]"
+        
+        # Create a panel for the file
+        file_panel = Panel(
+            info_line,
+            title=header,
+            title_align="left",
+            border_style="green",
+            box=ROUNDED,
+            padding=(0, 1)
+        )
+        console.print(file_panel)
+        
+        # Display chunks with indentation
+        for j, chunk in enumerate(result["chunks"], 1):
+            # Chunk header with similarity score
+            chunk_header = f"[cyan]Chunk {j}/{len(result['chunks'])}[/cyan] • [dim]similarity: {chunk['similarity']:.3f} • lines: {chunk['metadata']['start_line']}-{chunk['metadata']['end_line']}[/dim]"
+            
+            # Format the content with syntax highlighting if it contains code
+            content = chunk['metadata']['content']
+            
+            # Simple heuristic for code detection
+            if any(marker in content for marker in ['```', 'def ', 'function', 'import', 'class ']):
+                # Try to extract code blocks or display as plain text
+                content_display = Syntax(content, "markdown", theme="dim white", line_numbers=False)
+            else:
+                content_display = Text(content, style="dim white")
+            
+            # Create a sub-panel for each chunk
+            chunk_panel = Panel(
+                content_display,
+                title=chunk_header,
+                title_align="left",
+                border_style="blue",
+                box=MINIMAL,
+                padding=(0, 2)
+            )
+            
+            console.print(chunk_panel, width=console.width - 4)
+        
+        console.print()  # Add spacing between results
+# e.g: python obsidian_semantic_search search "installing Postgres" --top-k=2
+@app.command()
+def search_basic(query: str, top_k: int = 5, chunks_per_file: int = 3):
+    """Search indexed documents"""
+    results = SemanticSearch().search(query, top_k, chunks_per_file)
 
-    print("\n")
+    for i in range(len(results)):
+        result = results[i]
+        print(f"\n[bold green underline]{result['title']}[/bold green underline]")
+        print(f"path: {result['file_path']}")
+        print(f"file_id: {result['file_id']}")
+        print(f"best similarity: {result['best_similarity']}")
+        chunks = result["chunks"]
+        print(f"chunks: {len(chunks)}")
+        for chunk in chunks:
+            print(f"\nsimilarity: {chunk['similarity']}")
+            metadata = chunk["metadata"]
+            print(f"lines: {metadata['start_line']} - {metadata['end_line']}")
+            print(f"content:\n{metadata['content']}")
+
+@app.command()
+def search_center():
+    results = SemanticSearch().search_center()
     for i in range(len(results)):
         result = results[i]
         similarity = result["similarity"]
@@ -225,8 +356,12 @@ def search(query: str):
         content = metadata["content"]
         start_line = metadata["start_line"]
         end_line = metadata["end_line"]
+        file_path = metadata["file_path"]
 
-        print(f"[bold green]{title}[/bold green]\nsimilarity: {similarity}\nlines: {start_line}-{end_line}\n{content}\n\n")
+        print(f"[bold green]{title}[/bold green]\nsimilarity: {similarity}\nlines: {start_line}-{end_line}\n")
+        print(f"path: [blue]{file_path}[/blue]\n")
+        print(f"content:\n{content}\n\n")
+
 
 if __name__ == "__main__":
     app()
