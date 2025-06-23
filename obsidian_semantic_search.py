@@ -269,24 +269,21 @@ def index_file(file_path: Path):
     file_path = Path(file_path)
     semantic_search.index_file(filepath=file_path)
 
-# vibe coded: will adjust
+# e.g: python obsidian_semantic_search search "installing Postgres" --top-k=2
 @app.command()
 def search(query: str, top_k: int = 5, chunks_per_file: int = 3):
     """Search indexed documents"""
     results = SemanticSearch().search(query, top_k, chunks_per_file)
-    
+
     console.print(f"\n[bold cyan]Search results for:[/bold cyan] [yellow]{query}[/yellow]\n")
-    
+
     for i, result in enumerate(results, 1):
-        # Create a header with file info
         header = Text()
         header.append(f"{i}. ", style="bold cyan")
         header.append(result['title'], style="bold green")
-        
-        # Create a subtle info line
+
         info_line = f"[dim]{result['file_path']} • {result['best_similarity']:.3f} similarity[/dim]"
-        
-        # Create a panel for the file
+
         file_panel = Panel(
             info_line,
             title=header,
@@ -296,23 +293,12 @@ def search(query: str, top_k: int = 5, chunks_per_file: int = 3):
             padding=(0, 1)
         )
         console.print(file_panel)
-        
-        # Display chunks with indentation
+
         for j, chunk in enumerate(result["chunks"], 1):
-            # Chunk header with similarity score
             chunk_header = f"[cyan]Chunk {j}/{len(result['chunks'])}[/cyan] • [dim]similarity: {chunk['similarity']:.3f} • lines: {chunk['metadata']['start_line']}-{chunk['metadata']['end_line']}[/dim]"
-            
-            # Format the content with syntax highlighting if it contains code
+
             content = chunk['metadata']['content']
-            
-            # Simple heuristic for code detection
-            if any(marker in content for marker in ['```', 'def ', 'function', 'import', 'class ']):
-                # Try to extract code blocks or display as plain text
-                content_display = Syntax(content, "markdown", theme="dim white", line_numbers=False)
-            else:
-                content_display = Text(content, style="dim white")
-            
-            # Create a sub-panel for each chunk
+            content_display = Text(content, style="dim white")
             chunk_panel = Panel(
                 content_display,
                 title=chunk_header,
@@ -321,11 +307,11 @@ def search(query: str, top_k: int = 5, chunks_per_file: int = 3):
                 box=MINIMAL,
                 padding=(0, 2)
             )
-            
+
             console.print(chunk_panel, width=console.width - 4)
-        
-        console.print()  # Add spacing between results
-# e.g: python obsidian_semantic_search search "installing Postgres" --top-k=2
+
+        console.print()
+
 @app.command()
 def search_basic(query: str, top_k: int = 5, chunks_per_file: int = 3):
     """Search indexed documents"""
