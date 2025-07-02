@@ -16,6 +16,8 @@ from rich.text import Text
 # from rich.columns import Columns
 from rich.box import ROUNDED, MINIMAL
 
+import json
+
 console = Console()
 ###############################################################################
 # notes:
@@ -240,6 +242,13 @@ class SemanticSearch:
 
         return formatted_results
 
+    def dump_json(self):
+        all_data = self.collection.get(include=["embeddings"])
+        embeddings = np.array(all_data["embeddings"]).tolist()
+        file_path = "embeddings.json"
+        with open(file_path, "w") as json_file:
+            json.dump(embeddings, json_file, indent=4)
+
     def find_files_by_ids(self, notes_dir: str,  file_ids: List[str]) -> Dict[str, str]:
         results = {}
 
@@ -348,6 +357,9 @@ def search_center():
         print(f"path: [blue]{file_path}[/blue]\n")
         print(f"content:\n{content}\n\n")
 
+@app.command()
+def dump_json():
+    SemanticSearch().dump_json()
 
 if __name__ == "__main__":
     app()
