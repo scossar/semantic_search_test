@@ -1,6 +1,6 @@
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
-import frontmatter
+import frontmatter  # package: python-frontmatter
 from typing import Dict, List, Set
 import typer
 from rich import print
@@ -273,7 +273,7 @@ def index_directory(notes_dir: str):
 
 @app.command()
 def index_file(file_path: Path):
-    """Index all markdown files in a directory"""
+    """Index a given file"""
     semantic_search = SemanticSearch()
     file_path = Path(file_path)
     semantic_search.index_file(filepath=file_path)
